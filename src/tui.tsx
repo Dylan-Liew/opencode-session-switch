@@ -6,6 +6,7 @@ import { createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-j
 const PLUGIN_ID = "opencode-session-switch";
 const SESSION_CACHE_TTL_MS = 10_000;
 const SWITCH_GUARD_MS = 350;
+const SESSION_LIST_MAX_HEIGHT = 12;
 const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 const SPINNER_INTERVAL_MS = 80;
 
@@ -213,36 +214,39 @@ function SidebarSessionSwitch(props: { api: TuiPluginApi; sessionID: string }) {
       <Show when={expanded()}>
         <Show when={!loading()} fallback={<text fg={theme.textMuted}>  Loading sessions...</text>}>
           <Show when={visibleSessions().length > 0} fallback={<text fg={theme.textMuted}>  No other recent sessions</text>}>
-            <box flexDirection="column" gap={0}>
-              <For each={visibleSessions()}>
-                {(session) => {
-                  const status = () => getSessionStatus(props.api, session.id);
-                  const statusColor = () => {
-                    if (status() === "retry") return theme.warning;
-                    return theme.textMuted;
-                  };
-
-                  return (
-                    <box
-                      flexDirection="row"
-                      justifyContent="space-between"
-                      gap={1}
-                      onMouseDown={(event) => {
-                        clickPrimary(event);
-                        selectSession(session.id);
-                      }}
-                    >
-                      <text fg={session.current || switchingSessionID() === session.id ? theme.primary : theme.text}>
-                        {`  ${shortTitle(session.title)}`}
-                      </text>
-                      <Show when={status() === "busy"} fallback={<text fg={statusColor()}>{status()}</text>}>
-                        <text fg={theme.textMuted}>{spinnerFrame(spinnerIndex())}</text>
-                      </Show>
-                    </box>
-                  );
-                }}
-              </For>
-            </box>
+            <scrollbox maxHeight={SESSION_LIST_MAX_HEIGHT}>
+              <box flexDirection="column" gap={0}>
+                <For each={visibleSessions()}>
+                  {(session) => {
+                    const status = () => getSessionStatus(props.api, session.id);
+                    return (
+                      <box
+                        flexDirection="row"
+                        gap={1}
+                        onMouseDown={(event) => {
+                          clickPrimary(event);
+                          selectSession(session.id);
+                        }}
+                      >
+                        <text fg={session.current || switchingSessionID() === session.id ? theme.primary : theme.text}>
+                          {`  ${shortTitle(session.title)}`}
+                        </text>
+                        <Show
+                          when={status() === "busy"}
+                          fallback={
+                            <Show when={status() === "retry"}>
+                              <text fg={theme.warning}>retry</text>
+                            </Show>
+                          }
+                        >
+                          <text fg={theme.textMuted}>{spinnerFrame(spinnerIndex())}</text>
+                        </Show>
+                      </box>
+                    );
+                  }}
+                </For>
+              </box>
+            </scrollbox>
           </Show>
         </Show>
       </Show>
