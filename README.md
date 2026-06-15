@@ -10,6 +10,12 @@ Recommended:
 opencode plugin -g opencode-session-switch
 ```
 
+If OpenCode already has an older cached copy, force a refresh:
+
+```bash
+opencode plugin -g -f opencode-session-switch
+```
+
 Manual install:
 
 ```json
