@@ -1,6 +1,6 @@
 {
   "name": "opencode-session-switch",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "description": "OpenCode TUI plugin that adds a session switch panel to the sidebar.",
   "type": "module",
   "main": "./index.ts",
