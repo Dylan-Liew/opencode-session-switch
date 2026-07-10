@@ -1,10 +1,12 @@
 /** @jsxImportSource @opentui/solid */
-import { TextAttributes, type MouseEvent } from "@opentui/core";
+import { MouseButton, TextAttributes, type MouseEvent } from "@opentui/core";
 import type { TuiPlugin, TuiPluginApi, TuiPluginModule } from "@opencode-ai/plugin/tui";
-import { createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
+import { createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 
 const PLUGIN_ID = "opencode-session-switch";
 const SESSION_CACHE_TTL_MS = 10_000;
+const SESSION_FETCH_TIMEOUT_MS = 5_000;
+const SESSION_LIST_LIMIT = 50;
 const SWITCH_GUARD_MS = 350;
 const SESSION_LIST_MAX_HEIGHT = 12;
 const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
@@ -35,19 +37,63 @@ function asRecord(value: unknown): Record<string, unknown> | undefined {
   return value && typeof value === "object" ? (value as Record<string, unknown>) : undefined;
 }
 
+function numberValue(value: unknown): number | undefined {
+  return typeof value === "number" ? value : undefined;
+}
+
+function sessionArray(value: unknown): unknown[] | undefined {
+  if (Array.isArray(value)) {
+    return value;
+  }
+
+  const result = asRecord(value) as SessionListResult | undefined;
+  if (!result || result.error) {
+    return undefined;
+  }
+
+  if (Array.isArray(result.data)) {
+    return result.data;
+  }
+
+  const data = asRecord(result.data);
+  if (Array.isArray(data?.sessions)) {
+    return data.sessions;
+  }
+
+  if (Array.isArray(data?.items)) {
+    return data.items;
+  }
+
+  return undefined;
+}
+
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T | undefined> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<undefined>((resolve) => {
+    timer = setTimeout(() => resolve(undefined), timeoutMs);
+  });
+  promise.then(
+    () => timer && clearTimeout(timer),
+    () => timer && clearTimeout(timer),
+  );
+
+  return Promise.race([promise, timeout]);
+}
+
 function toSessionView(value: unknown): SessionView | undefined {
   const session = asRecord(value);
   if (!session || typeof session.id !== "string") {
     return undefined;
   }
 
-  if (typeof session.parentID === "string" && session.parentID.trim()) {
+  const parentID = session.parentID ?? session.parentId;
+  if (typeof parentID === "string" && parentID.trim()) {
     return undefined;
   }
 
   const time = asRecord(session.time);
-  const created = typeof time?.created === "number" ? time.created : 0;
-  const updated = typeof time?.updated === "number" ? time.updated : 0;
+  const created = numberValue(time?.created) ?? numberValue(session.created) ?? 0;
+  const updated = numberValue(time?.updated) ?? numberValue(session.updated) ?? created;
   const title = typeof session.title === "string" && session.title.trim() ? session.title.trim() : "Untitled session";
   return {
     id: session.id,
@@ -96,12 +142,19 @@ function withCurrentSession(sessions: SessionView[], currentSessionID: string): 
 }
 
 async function fetchRecentSessions(api: TuiPluginApi): Promise<SessionView[]> {
-  const result = (await api.client.session.list()) as SessionListResult;
-  if (result.error || !Array.isArray(result.data)) {
+  let result: unknown;
+  try {
+    result = await withTimeout(api.client.session.list({ roots: true, limit: SESSION_LIST_LIMIT }), SESSION_FETCH_TIMEOUT_MS);
+  } catch {
     return cachedSessions;
   }
 
-  cachedSessions = result.data
+  const data = sessionArray(result);
+  if (!data) {
+    return cachedSessions;
+  }
+
+  cachedSessions = data
     .map(toSessionView)
     .filter((session): session is SessionView => Boolean(session))
     .sort(sortSessions);
@@ -127,9 +180,14 @@ async function refreshRecentSessions(api: TuiPluginApi, currentSessionID: string
   return withCurrentSession(await refreshPromise, currentSessionID);
 }
 
-function clickPrimary(event: MouseEvent): void {
+function clickPrimary(event: MouseEvent): boolean {
+  if (event.button !== MouseButton.LEFT) {
+    return false;
+  }
+
   event.preventDefault();
   event.stopPropagation();
+  return true;
 }
 
 function switchSession(api: TuiPluginApi, sessionID: string): void {
@@ -159,6 +217,8 @@ function SidebarSessionSwitch(props: { api: TuiPluginApi; sessionID: string }) {
     setLoading(cachedSessions.length === 0);
     try {
       setSessions(await refreshRecentSessions(props.api, props.sessionID));
+    } catch {
+      setSessions(getCachedSessions(props.sessionID));
     } finally {
       setLoading(false);
     }
@@ -174,9 +234,7 @@ function SidebarSessionSwitch(props: { api: TuiPluginApi; sessionID: string }) {
     setTimeout(() => setSwitchingSessionID(undefined), SWITCH_GUARD_MS);
   };
 
-  onMount(() => {
-    void refresh();
-  });
+  void refresh();
 
   const spinnerTimer = setInterval(() => {
     setSpinnerIndex((index) => index + 1);
@@ -200,9 +258,10 @@ function SidebarSessionSwitch(props: { api: TuiPluginApi; sessionID: string }) {
         flexDirection="row"
         gap={1}
         alignItems="center"
-        onMouseDown={(event) => {
-          clickPrimary(event);
-          setExpanded((value) => !value);
+        onMouseUp={(event) => {
+          if (clickPrimary(event)) {
+            setExpanded((value) => !value);
+          }
         }}
       >
         <text fg={theme.text}>{expanded() ? "▼" : "▶"}</text>
@@ -223,9 +282,10 @@ function SidebarSessionSwitch(props: { api: TuiPluginApi; sessionID: string }) {
                       <box
                         flexDirection="row"
                         gap={1}
-                        onMouseDown={(event) => {
-                          clickPrimary(event);
-                          selectSession(session.id);
+                        onMouseUp={(event) => {
+                          if (clickPrimary(event)) {
+                            selectSession(session.id);
+                          }
                         }}
                       >
                         <text fg={session.current || switchingSessionID() === session.id ? theme.primary : theme.text}>
