@@ -27,6 +27,11 @@ interface SessionListResult {
 
 type SessionEventName = "session.created" | "session.updated" | "session.deleted";
 type SessionStatusLabel = "busy" | "retry" | "idle";
+type SessionSortBy = "title" | "activity";
+
+interface PluginSettings {
+  sortBy?: SessionSortBy;
+}
 
 let cachedSessions: SessionView[] = [];
 let cachedAt = 0;
@@ -108,7 +113,14 @@ function shortTitle(title: string): string {
   return title.length > 26 ? `${title.slice(0, 25)}...` : title;
 }
 
-function sortSessions(left: SessionView, right: SessionView): number {
+function sortSessions(left: SessionView, right: SessionView, sortBy: SessionSortBy): number {
+  if (sortBy === "activity") {
+    const updated = right.updated - left.updated;
+    if (updated !== 0) {
+      return updated;
+    }
+  }
+
   const title = left.title.localeCompare(right.title, undefined, { sensitivity: "base" });
   if (title !== 0) {
     return title;
@@ -141,7 +153,7 @@ function withCurrentSession(sessions: SessionView[], currentSessionID: string): 
   }));
 }
 
-async function fetchRecentSessions(api: TuiPluginApi): Promise<SessionView[]> {
+async function fetchRecentSessions(api: TuiPluginApi, sortBy: SessionSortBy): Promise<SessionView[]> {
   let result: unknown;
   try {
     result = await withTimeout(api.client.session.list({ roots: true, limit: SESSION_LIST_LIMIT }), SESSION_FETCH_TIMEOUT_MS);
@@ -157,7 +169,7 @@ async function fetchRecentSessions(api: TuiPluginApi): Promise<SessionView[]> {
   cachedSessions = data
     .map(toSessionView)
     .filter((session): session is SessionView => Boolean(session))
-    .sort(sortSessions);
+    .sort((left, right) => sortSessions(left, right, sortBy));
   cachedAt = Date.now();
   cacheDirty = false;
 
@@ -172,8 +184,8 @@ function shouldRefreshSessions(): boolean {
   return cacheDirty || cachedSessions.length === 0 || Date.now() - cachedAt > SESSION_CACHE_TTL_MS;
 }
 
-async function refreshRecentSessions(api: TuiPluginApi, currentSessionID: string): Promise<SessionView[]> {
-  refreshPromise ??= fetchRecentSessions(api).finally(() => {
+async function refreshRecentSessions(api: TuiPluginApi, currentSessionID: string, sortBy: SessionSortBy): Promise<SessionView[]> {
+  refreshPromise ??= fetchRecentSessions(api, sortBy).finally(() => {
     refreshPromise = undefined;
   });
 
@@ -198,7 +210,7 @@ function switchSession(api: TuiPluginApi, sessionID: string): void {
   }
 }
 
-function SidebarSessionSwitch(props: { api: TuiPluginApi; sessionID: string }) {
+function SidebarSessionSwitch(props: { api: TuiPluginApi; sessionID: string; sortBy: SessionSortBy }) {
   const theme = props.api.theme.current;
   const [sessions, setSessions] = createSignal<SessionView[]>(getCachedSessions(props.sessionID));
   const [loading, setLoading] = createSignal(cachedSessions.length === 0);
@@ -216,7 +228,7 @@ function SidebarSessionSwitch(props: { api: TuiPluginApi; sessionID: string }) {
 
     setLoading(cachedSessions.length === 0);
     try {
-      setSessions(await refreshRecentSessions(props.api, props.sessionID));
+      setSessions(await refreshRecentSessions(props.api, props.sessionID, props.sortBy));
     } catch {
       setSessions(getCachedSessions(props.sessionID));
     } finally {
@@ -314,12 +326,15 @@ function SidebarSessionSwitch(props: { api: TuiPluginApi; sessionID: string }) {
   );
 }
 
-const tui: TuiPlugin = async (api) => {
+const tui: TuiPlugin = async (api, options) => {
+  const settings = (options ?? {}) as PluginSettings;
+  const sortBy: SessionSortBy = settings.sortBy === "activity" ? "activity" : "title";
+
   api.slots.register({
     order: 175,
     slots: {
       sidebar_content(_ctx, props) {
-        return <SidebarSessionSwitch api={api} sessionID={props.session_id} />;
+        return <SidebarSessionSwitch api={api} sessionID={props.session_id} sortBy={sortBy} />;
       },
     },
   });

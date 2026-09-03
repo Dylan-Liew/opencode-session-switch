@@ -36,6 +36,23 @@ For local development, add your local checkout path to `~/.config/opencode/tui.j
 
 Restart OpenCode after changing TUI plugin config.
 
+## Configuration
+
+The session list is sorted alphabetically by title by default. To sort by
+most recent activity (like `/sessions`) instead, pass plugin options in
+`tui.json`:
+
+```json
+{
+  "$schema": "https://opencode.ai/tui.json",
+  "plugin": [
+    ["opencode-session-switch", { "sortBy": "activity" }]
+  ]
+}
+```
+
+`sortBy` accepts `"title"` (default) or `"activity"`.
+
 ## Use It
 
 - Sidebar: expand `Sessions` and click a session name to switch to it.
