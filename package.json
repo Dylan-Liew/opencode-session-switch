@@ -12,12 +12,19 @@
     "./server": {
       "import": "./src/server.ts"
     },
+    "./cli": {
+      "import": "./tui.ts"
+    },
     "./tui": {
+      "import": "./tui.ts"
+    },
+    "./tui-v1": {
       "import": "./dist/tui.js"
     }
   },
   "files": [
     "index.ts",
+    "tui.ts",
     "dist",
     "src",
     "README.md"
@@ -46,10 +53,18 @@
     "build": "bun ./scripts/build.ts",
     "test": "tsc -p tsconfig.json --noEmit"
   },
+  "peerDependencies": {
+    "@opentui/core": ">=0.4.5",
+    "@opentui/solid": ">=0.4.5",
+    "solid-js": ">=1.9.0"
+  },
+  "dependencies": {
+    "@opencode/plugin": "2.0.7"
+  },
   "devDependencies": {
-    "@opencode-ai/plugin": "latest",
-    "@opentui/core": "latest",
-    "@opentui/solid": "latest",
+    "@opencode-ai/plugin": "1.18.31",
+    "@opentui/core": "0.5.10",
+    "@opentui/solid": "0.5.10",
     "@types/bun": "latest",
     "@types/node": "^24.3.0",
     "solid-js": "1.9.12",
