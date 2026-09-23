@@ -1,6 +1,7 @@
 /** @jsxImportSource @opentui/solid */
 import { MouseButton, TextAttributes, type MouseEvent } from "@opentui/core";
-import type { TuiPlugin, TuiPluginApi, TuiPluginModule } from "@opencode-ai/plugin/tui";
+import { Plugin } from "@opencode/plugin/tui";
+import type { Context as TuiPluginApi } from "@opencode/plugin/tui/context";
 import { createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 
 const PLUGIN_ID = "opencode-session-switch";
@@ -25,7 +26,7 @@ interface SessionListResult {
   error?: unknown;
 }
 
-type SessionEventName = "session.created" | "session.updated" | "session.deleted";
+type SessionEventName = "session.created" | "session.renamed" | "session.deleted";
 type SessionStatusLabel = "busy" | "retry" | "idle";
 
 let cachedSessions: SessionView[] = [];
@@ -118,16 +119,7 @@ function sortSessions(left: SessionView, right: SessionView): number {
 }
 
 function getSessionStatus(api: TuiPluginApi, sessionID: string): SessionStatusLabel {
-  const status = api.state.session.status(sessionID);
-  if (status?.type === "busy") {
-    return "busy";
-  }
-
-  if (status?.type === "retry") {
-    return "retry";
-  }
-
-  return "idle";
+  return api.data.session.status(sessionID) === "running" ? "busy" : "idle";
 }
 
 function spinnerFrame(index: number): string {
@@ -144,7 +136,7 @@ function withCurrentSession(sessions: SessionView[], currentSessionID: string): 
 async function fetchRecentSessions(api: TuiPluginApi): Promise<SessionView[]> {
   let result: unknown;
   try {
-    result = await withTimeout(api.client.session.list({ roots: true, limit: SESSION_LIST_LIMIT }), SESSION_FETCH_TIMEOUT_MS);
+    result = await withTimeout(api.client.session.list({ parentID: null, limit: SESSION_LIST_LIMIT }), SESSION_FETCH_TIMEOUT_MS);
   } catch {
     return cachedSessions;
   }
@@ -192,14 +184,14 @@ function clickPrimary(event: MouseEvent): boolean {
 
 function switchSession(api: TuiPluginApi, sessionID: string): void {
   try {
-    api.route.navigate("session", { sessionID });
+    api.ui.router.navigate({ type: "session", sessionID });
   } catch {
-    api.ui.toast({ message: "Failed to switch session", variant: "error", duration: 2500 });
+    api.ui.toast.show({ message: "Failed to switch session", variant: "error", duration: 2500 });
   }
 }
 
 function SidebarSessionSwitch(props: { api: TuiPluginApi; sessionID: string }) {
-  const theme = props.api.theme.current;
+  const theme = props.api.theme;
   const [sessions, setSessions] = createSignal<SessionView[]>(getCachedSessions(props.sessionID));
   const [loading, setLoading] = createSignal(cachedSessions.length === 0);
   const [expanded, setExpanded] = createSignal(true);
@@ -240,9 +232,9 @@ function SidebarSessionSwitch(props: { api: TuiPluginApi; sessionID: string }) {
     setSpinnerIndex((index) => index + 1);
   }, SPINNER_INTERVAL_MS);
 
-  const sessionEvents: SessionEventName[] = ["session.created", "session.updated", "session.deleted"];
+  const sessionEvents: SessionEventName[] = ["session.created", "session.renamed", "session.deleted"];
   const disposers = sessionEvents.map((event) =>
-    props.api.event.on(event, () => {
+    props.api.data.on(event, () => {
       cacheDirty = true;
       void refresh(true);
     }),
@@ -264,15 +256,15 @@ function SidebarSessionSwitch(props: { api: TuiPluginApi; sessionID: string }) {
           }
         }}
       >
-        <text fg={theme.text}>{expanded() ? "▼" : "▶"}</text>
-        <text fg={theme.text} attributes={TextAttributes.BOLD}>
+        <text fg={theme.text.base}>{expanded() ? "▼" : "▶"}</text>
+        <text fg={theme.text.base} attributes={TextAttributes.BOLD}>
           Sessions
         </text>
       </box>
 
       <Show when={expanded()}>
-        <Show when={!loading()} fallback={<text fg={theme.textMuted}>  Loading sessions...</text>}>
-          <Show when={visibleSessions().length > 0} fallback={<text fg={theme.textMuted}>  No other recent sessions</text>}>
+        <Show when={!loading()} fallback={<text fg={theme.text.muted}>  Loading sessions...</text>}>
+          <Show when={visibleSessions().length > 0} fallback={<text fg={theme.text.muted}>  No other recent sessions</text>}>
             <scrollbox maxHeight={SESSION_LIST_MAX_HEIGHT}>
               <box flexDirection="column" gap={0}>
                 <For each={visibleSessions()}>
@@ -288,18 +280,18 @@ function SidebarSessionSwitch(props: { api: TuiPluginApi; sessionID: string }) {
                           }
                         }}
                       >
-                        <text fg={session.current || switchingSessionID() === session.id ? theme.primary : theme.text}>
+                        <text fg={session.current || switchingSessionID() === session.id ? theme.text.action.primary.base : theme.text.base}>
                           {`  ${shortTitle(session.title)}`}
                         </text>
                         <Show
                           when={status() === "busy"}
                           fallback={
                             <Show when={status() === "retry"}>
-                              <text fg={theme.warning}>retry</text>
+                              <text fg={theme.text.feedback.warning.base}>retry</text>
                             </Show>
                           }
                         >
-                          <text fg={theme.textMuted}>{spinnerFrame(spinnerIndex())}</text>
+                          <text fg={theme.text.muted}>{spinnerFrame(spinnerIndex())}</text>
                         </Show>
                       </box>
                     );
@@ -314,20 +306,12 @@ function SidebarSessionSwitch(props: { api: TuiPluginApi; sessionID: string }) {
   );
 }
 
-const tui: TuiPlugin = async (api) => {
-  api.slots.register({
-    order: 175,
-    slots: {
-      sidebar_content(_ctx, props) {
-        return <SidebarSessionSwitch api={api} sessionID={props.session_id} />;
-      },
-    },
-  });
-};
-
-const plugin: TuiPluginModule & { id: string } = {
+export default Plugin.define({
   id: PLUGIN_ID,
-  tui,
-};
-
-export default plugin;
+  setup(api) {
+    return api.ui.slot({
+      append: "sidebar.content",
+      render: (props) => <SidebarSessionSwitch api={api} sessionID={props.sessionID} />,
+    });
+  },
+});

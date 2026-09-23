@@ -1,12 +1,8 @@
-import type { Hooks, Plugin, PluginModule } from "@opencode-ai/plugin";
+import { Plugin } from "@opencode/plugin";
 
 const PLUGIN_ID = "opencode-session-switch";
 
-const server: Plugin = async (): Promise<Hooks> => ({});
-
-const module: PluginModule & { id: string } = {
+export default Plugin.define({
   id: PLUGIN_ID,
-  server,
-};
-
-export default module;
+  setup() {},
+});

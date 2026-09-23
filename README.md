@@ -2,6 +2,9 @@
 
 Adds a compact session dropdown to the OpenCode sidebar.
 
+> [!IMPORTANT]
+> Version 1.x supports OpenCode v2 only. OpenCode v1 is no longer supported; use the final 0.x release if you must remain on v1.
+
 ## Install
 
 Recommended:
@@ -20,21 +23,21 @@ Manual install:
 
 ```json
 {
-  "$schema": "https://opencode.ai/tui.json",
-  "plugin": ["opencode-session-switch"]
+  "$schema": "https://opencode.ai/config.json",
+  "plugins": ["opencode-session-switch"]
 }
 ```
 
-For local development, add your local checkout path to `~/.config/opencode/tui.json`:
+For local development, add your local checkout path to `~/.config/opencode/opencode.json`:
 
 ```json
 {
-  "$schema": "https://opencode.ai/tui.json",
-  "plugin": ["/path/to/opencode-session-switch"]
+  "$schema": "https://opencode.ai/config.json",
+  "plugins": ["file:///path/to/opencode-session-switch"]
 }
 ```
 
-Restart OpenCode after changing TUI plugin config.
+Reload or restart OpenCode after changing plugin config.
 
 ## Use It
 
